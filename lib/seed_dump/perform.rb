@@ -3,10 +3,10 @@ module SeedDump
 
     def initialize
       @opts = {}
-      @ar_options = {} 
+      @ar_options = {}
       @indent = ""
       @models = []
-      @seed_rb = "" 
+      @seed_rb = ""
       @id_set_string = ""
       @verbose = true
       @model_dir = 'app/models/*.rb'
@@ -26,9 +26,12 @@ module SeedDump
     end
 
     def loadModels
-      Dir[@model_dir].sort.each do |f|
-        model = File.basename(f, '.*').camelize
-        @models.push model if @opts['models'].include?(model) || @opts['models'].empty? 
+      # Looking for all AR models (not only the ones in /app/models). This is usefull for engines and gems with data
+      # Found in http://stackoverflow.com/questions/516579/is-there-a-way-to-get-a-collection-of-all-the-models-in-your-rails-app
+      ActiveRecord::Base.subclasses.collect { |type| type.name }.sort.each do |model|
+        class_model = eval(model)
+        name = class_model.name
+        @models.push model if (@opts['models'].include?(name) || @opts['models'].empty?) and class_model.table_exists?
       end
     end
 
@@ -38,7 +41,7 @@ module SeedDump
         @id_set_string = "{ |c| c.#{k} = #{v} }.save"
       else
         a_s.push("#{k.to_sym.inspect} => #{v}") unless k == 'id' && !@opts['with_id']
-      end 
+      end
     end
 
     def dumpModel(model)
@@ -47,8 +50,8 @@ module SeedDump
       rows = []
       arr = []
       arr = model.find(:all, @ar_options) unless @opts['no-data']
-      arr = arr.empty? ? [model.new] : arr 
-      arr.each_with_index { |r,i| 
+      arr = arr.empty? ? [model.new] : arr
+      arr.each_with_index { |r,i|
         attr_s = [];
         r.attributes.each { |k,v| dumpAttribute(attr_s,r,k,v) }
         if @id_set_string.empty?
@@ -56,7 +59,7 @@ module SeedDump
         else
           create_hash << "\n#{model}.create" << '( ' << attr_s.join(', ') << ' )' << @id_set_string
         end
-      } 
+      }
       if @id_set_string.empty?
         "\n#{model}.create([\n" << rows.join(",\n") << "\n])\n"
       else
@@ -87,7 +90,7 @@ module SeedDump
     #override the rails version of this function to NOT truncate strings
     def attribute_for_inspect(r,k)
       value = r.attributes[k]
-      
+
       if value.is_a?(String) && value.length > 50
         "#{value}".inspect
       elsif value.is_a?(Date) || value.is_a?(Time)
